@@ -1,0 +1,48 @@
+name: Build Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            name: macOS
+            artifact_name: cursed-coddy-macos
+          - os: ubuntu-latest
+            name: Arch Linux (x86_64)
+            artifact_name: cursed-coddy-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+
+      - name: Build release binary
+        run: cargo build --release
+
+      - name: Rename binary (macOS)
+        if: matrix.os == 'macos-latest'
+        run: mv target/release/cursed-coddy target/release/cursed-coddy-macos
+
+      - name: Rename binary (Linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: mv target/release/cursed-coddy target/release/cursed-coddy-linux
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: target/release/cursed-coddy-*
