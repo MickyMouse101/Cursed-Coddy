@@ -1,7 +1,7 @@
 use crate::cli::{banner, colors::{Borders, Colors}};
 use crate::config::{Difficulty, Language, LessonType};
 use crate::execution::{Executor, FileManager};
-use crate::ollama::Generator;
+use crate::ollama::{formatter::GeneratedContent, Generator};
 use crate::progress::Tracker;
 use anyhow::Result;
 use colored::Colorize;
@@ -95,10 +95,21 @@ impl LessonManager {
         println!("Topic: {}\n", Colors::warning(&topic));
 
         println!("{}", Colors::info("Generating lesson content..."));
-        let mut content = self
+        let content = self
             .generator
             .generate(language, difficulty, lesson_type, &topic)?;
 
+        self.start_lesson_with_content(language, difficulty, lesson_type, topic, content)
+    }
+
+    pub fn start_lesson_with_content(
+        &self,
+        language: Language,
+        difficulty: Difficulty,
+        lesson_type: LessonType,
+        topic: String,
+        mut content: GeneratedContent,
+    ) -> Result<()> {
         // Clear screen for clean view
         Self::clear_screen();
 
