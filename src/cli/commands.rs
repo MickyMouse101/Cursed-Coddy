@@ -1,6 +1,6 @@
 use crate::cli::colors::Colors;
 use crate::config::{Difficulty, Language, LessonType};
-use crate::lessons::{HumanLessons, JourneyManager, LessonManager};
+use crate::lessons::{JourneyManager, LessonManager};
 use crate::progress::Tracker;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -60,33 +60,6 @@ fn handle_start() -> Result<()> {
     let language = Select::new("Select a language:", language_options)
         .prompt()
         .map_err(|e| anyhow::anyhow!("Selection cancelled: {}", e))?;
-
-    // Choose lesson source
-    let lesson_source_options = vec!["AI Generated", "Human Made"];
-    let lesson_source = Select::new("Choose lesson type:", lesson_source_options)
-        .prompt()
-        .map_err(|e| anyhow::anyhow!("Selection cancelled: {}", e))?;
-
-    // If human made, randomly select a lesson (no difficulty/topic selection)
-    if lesson_source == "Human Made" {
-        println!("{}", Colors::info("Selecting a random human-made lesson..."));
-        
-        if let Some(lesson) = HumanLessons::get_random_lesson() {
-            let manager = LessonManager::new()?;
-            let topic = format!("Human-made lesson");
-            manager.start_lesson_with_content(
-                lesson.language,
-                lesson.difficulty,
-                lesson.lesson_type,
-                topic,
-                lesson.content,
-            )?;
-            return Ok(());
-        } else {
-            println!("{}", Colors::warning("No human-made lessons available."));
-            return Ok(());
-        }
-    }
 
     // Select difficulty
     let difficulty_options = vec![

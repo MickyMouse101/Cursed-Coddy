@@ -1,6 +1,6 @@
 use crate::cli::colors::Colors;
-use crate::config::{curriculum::Curriculum, Language};
-use crate::lessons::LessonManager;
+use crate::config::Language;
+use crate::lessons::{HumanLessons, LessonManager};
 use crate::progress::Tracker;
 use anyhow::Result;
 use colored::Colorize;
@@ -20,7 +20,6 @@ impl JourneyManager {
     }
 
     pub fn start_or_continue_journey(&self, language: Language) -> Result<()> {
-        let curriculum = Curriculum::get_for_language(language);
         let mut journey_progress = self.tracker.get_journey_progress()?;
 
         // Start new journey if none exists or different language
@@ -31,7 +30,7 @@ impl JourneyManager {
             println!("{}", Colors::primary("Starting Learning Journey!").bold());
             println!("{}", Colors::primary(&"=".repeat(60)));
             println!("Language: {}", Colors::warning(language.display_name()));
-            println!("Total Stages: {}\n", Colors::success(&curriculum.total_stages().to_string()));
+            println!("{}", Colors::info("Human-made lessons with guided progression\n"));
             
             self.tracker.start_journey(language)?;
         }
@@ -45,89 +44,55 @@ impl JourneyManager {
                 None => break,
             };
 
-            let stage = match curriculum.get_stage(journey.current_stage) {
-                Some(s) => s,
+            // Use current_stage as the last lesson index
+            let last_index = if journey.current_stage == 0 && journey.completed_topics.is_empty() {
+                None // First lesson
+            } else {
+                Some(journey.current_stage)
+            };
+
+            // Get next human lesson
+            let (lesson, lesson_index) = match HumanLessons::get_next_lesson(last_index, language) {
+                Some((lesson, idx)) => (lesson, idx),
                 None => {
                     println!();
-                    println!("{}", Colors::label_pass("SUCCESS").bold());
-                    println!("{}", Colors::success("Congratulations! You've completed the entire journey!").bold());
-                    self.tracker.reset_journey()?;
-                    break;
+                    println!("{}", Colors::warning("No human-made lessons available for this language."));
+                    return Ok(());
                 }
             };
 
-            // Check if we've completed all topics in this stage
-            if journey.current_topic_index >= stage.topics.len() {
-                println!();
-                println!("{}", Colors::label_pass("SUCCESS"));
-                println!("{}", Colors::success(&format!("Stage {}: {} completed!", journey.current_stage + 1, stage.name)).bold());
-                
-                // Move to next stage
-                if journey.current_stage + 1 < curriculum.total_stages() {
-                    let continue_journey = match Confirm::new("Continue to next stage?")
-                        .with_default(true)
-                        .prompt() {
-                        Ok(true) => true,
-                        Ok(false) => false,
-                        Err(_) => {
-                            println!("\n{}", Colors::warning("Exiting journey..."));
-                            return Ok(());
-                        }
-                    };
-                    
-                    if continue_journey {
-                        self.tracker.advance_journey_stage()?;
-                        continue;
-                    } else {
-                        break;
-                    }
-                } else {
-                    println!("\n{}", Colors::success("You've completed all stages! Amazing work!").bold());
-                    self.tracker.reset_journey()?;
-                    break;
-                }
-            }
+            // Extract lesson title before moving lesson.content
+            let lesson_title_short = lesson.content.concept.split('.').next().unwrap_or("Human-made lesson").to_string();
+            let lesson_title = format!("Lesson {}: {}", lesson_index + 1, lesson_title_short);
 
-            if journey.current_topic_index >= stage.topics.len() {
-                if journey.current_stage + 1 < curriculum.total_stages() {
-                    self.tracker.advance_journey_stage()?;
-                    continue;
-                } else {
-                    println!("\n{}", Colors::success("You've completed all stages! Amazing work!").bold());
-                    self.tracker.reset_journey()?;
-                    break;
-                }
-            }
-
-            let topic = &stage.topics[journey.current_topic_index];
-            
             println!("\n{}", Colors::primary(&"=".repeat(60)));
-            println!("{}", Colors::primary(&format!("Stage {}/{}: {}", journey.current_stage + 1, curriculum.total_stages(), stage.name)).bold());
-            println!("{}", Colors::warning(&format!("Topic {}/{}: {}", journey.current_topic_index + 1, stage.topics.len(), topic)).bold());
-            println!("{}", Colors::warning(&format!("Difficulty: {}", stage.difficulty.display_name())));
+            println!("{}", Colors::primary(&format!("Lesson {}: {}", lesson_index + 1, lesson_title_short)).bold());
+            println!("{}", Colors::warning(&format!("Difficulty: {}", lesson.difficulty.display_name())));
             println!("{}", Colors::primary(&"=".repeat(60)));
 
             // Start the lesson
-            let lesson_result = self.lesson_manager.start_lesson(
-                language,
-                stage.difficulty,
-                stage.lesson_type,
-                topic.clone(),
+            let topic = format!("Human-made lesson {}", lesson_index + 1);
+            let lesson_result = self.lesson_manager.start_lesson_with_content(
+                lesson.language,
+                lesson.difficulty,
+                lesson.lesson_type,
+                topic,
+                lesson.content,
             );
             
-            // Only mark topic as completed if lesson finished successfully
+            // Mark lesson as completed if finished successfully
             match lesson_result {
                 Ok(_) => {
-                    self.tracker.complete_journey_topic(topic.clone())?;
+                    self.tracker.complete_journey_lesson(lesson_index, lesson_title)?;
                 }
                 Err(_e) => {
-                    println!("\n{}", Colors::warning("Lesson not completed. Topic progress not saved."));
+                    println!("\n{}", Colors::warning("Lesson not completed. Progress not saved."));
                     println!("{}", Colors::info("Use 'cursed-coddy journey' to continue from where you left off."));
                     return Ok(());
                 }
             }
 
-            match Confirm::new("Continue with next topic?")
+            match Confirm::new("Continue with next lesson?")
                 .with_default(true)
                 .prompt() {
                 Ok(true) => {}
@@ -149,22 +114,16 @@ impl JourneyManager {
         let journey_progress = self.tracker.get_journey_progress()?;
 
         if let Some(journey) = journey_progress {
-            let curriculum = Curriculum::get_for_language(journey.language);
-            
             println!("\n{}", Colors::primary("Learning Journey Status").bold());
             println!("{}", Colors::primary(&"=".repeat(60)));
             println!("Language: {}", Colors::warning(journey.language.display_name()));
-            println!("Current Stage: {}/{}", journey.current_stage + 1, curriculum.total_stages());
+            println!("Current Lesson: {}", Colors::success(&format!("Lesson {}", journey.current_stage + 1)));
+            println!("Lessons Completed: {}", Colors::success(&journey.completed_topics.len().to_string()));
             
-            if let Some(stage) = curriculum.get_stage(journey.current_stage) {
-                println!("Stage: {}", Colors::primary(&stage.name));
-                println!("Progress: {}/{} topics completed", journey.current_topic_index, stage.topics.len());
-                
-                if !journey.completed_topics.is_empty() {
-                    println!("\n{}", Colors::success("Completed Topics:"));
-                    for topic in &journey.completed_topics {
-                        println!("  {} {}", Colors::label_pass("OK"), Colors::success(topic));
-                    }
+            if !journey.completed_topics.is_empty() {
+                println!("\n{}", Colors::success("Completed Lessons:"));
+                for lesson in &journey.completed_topics {
+                    println!("  {} {}", Colors::label_pass("OK"), Colors::success(lesson));
                 }
             }
         } else {

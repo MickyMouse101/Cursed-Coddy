@@ -1,12 +1,14 @@
 use crate::config::{Difficulty, Language, LessonType};
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Curriculum {
     pub language: Language,
     pub stages: Vec<Stage>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stage {
     pub name: String,
@@ -16,6 +18,7 @@ pub struct Stage {
     pub lesson_type: LessonType,
 }
 
+#[allow(dead_code)]
 impl Curriculum {
     pub fn get_for_language(language: Language) -> Self {
         match language {

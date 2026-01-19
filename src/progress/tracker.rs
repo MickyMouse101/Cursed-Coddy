@@ -174,22 +174,13 @@ impl Tracker {
         Ok(progress.journey_progress.clone())
     }
 
-    pub fn complete_journey_topic(&self, topic: String) -> Result<()> {
+    pub fn complete_journey_lesson(&self, lesson_index: usize, lesson_title: String) -> Result<()> {
         let mut progress = self.load()?;
         if let Some(ref mut journey) = progress.journey_progress {
-            if !journey.completed_topics.contains(&topic) {
-                journey.completed_topics.push(topic);
+            journey.current_stage = lesson_index;
+            if !journey.completed_topics.contains(&lesson_title) {
+                journey.completed_topics.push(lesson_title);
             }
-            journey.current_topic_index += 1;
-        }
-        self.save(&progress)
-    }
-
-    pub fn advance_journey_stage(&self) -> Result<()> {
-        let mut progress = self.load()?;
-        if let Some(ref mut journey) = progress.journey_progress {
-            journey.current_stage += 1;
-            journey.current_topic_index = 0;
         }
         self.save(&progress)
     }
@@ -199,4 +190,5 @@ impl Tracker {
         progress.journey_progress = None;
         self.save(&progress)
     }
+
 }

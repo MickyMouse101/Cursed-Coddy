@@ -7,6 +7,8 @@ use anyhow::Result;
 use colored::Colorize;
 use inquire::{Confirm, Text};
 use std::process::Command;
+use std::thread;
+use std::time::Duration;
 
 // Terminal width for text wrapping (default to 78, leaving margin)
 const TERMINAL_WIDTH: usize = 78;
@@ -18,9 +20,12 @@ fn wrap_text(text: &str, width: usize, indent: usize) -> String {
     let mut current_line = String::new();
     
     for word in text.split_whitespace() {
+        let word_chars = word.chars().count();
+        let current_chars = current_line.chars().count();
+        
         if current_line.is_empty() {
             current_line = format!("{}{}", indent_str, word);
-        } else if current_line.len() + word.len() + 1 <= width {
+        } else if current_chars + word_chars + 1 <= width {
             current_line.push(' ');
             current_line.push_str(word);
         } else {
@@ -48,11 +53,16 @@ fn print_wrapped(text: &str, width: usize, indent: usize) {
 // Helper to print section with proper spacing
 fn print_section_header(title: &str, color_fn: fn(&str) -> colored::ColoredString) {
     println!();
-    let header = format!("╔═ {} ═╗", title);
-    let width = TERMINAL_WIDTH.min(header.chars().count() + 4);
+    // Use consistent width for all section headers
+    let width = TERMINAL_WIDTH.min(78);
+    let title_chars = title.chars().count();
+    let title_padding = width.saturating_sub(title_chars + 2);
+    let left_pad = title_padding / 2;
+    let right_pad = title_padding - left_pad;
     let border = format!("╔{}╗", "═".repeat(width.saturating_sub(2)));
+    let title_line = format!("║{}{}{}║", " ".repeat(left_pad), title, " ".repeat(right_pad));
     println!("{}", color_fn(&border).bold());
-    println!("{}", color_fn(&format!("║ {} ║", title)).bold());
+    println!("{}", color_fn(&title_line).bold());
     println!("{}", color_fn(&format!("╚{}╝", "═".repeat(width.saturating_sub(2)))).bold());
     println!();
 }
@@ -227,9 +237,10 @@ impl LessonManager {
             content.exercises.len(),
         )?;
 
-        // Process exercises
+        // Process exercises - don't clear screen before first exercise, show it right after lesson content
         for (idx, exercise) in content.exercises.iter().enumerate() {
-            self.handle_exercise(language, idx + 1, exercise, &content)?;
+            let clear_before = idx > 0; // Only clear screen for exercises after the first one
+            self.handle_exercise(language, idx + 1, exercise, &content, clear_before)?;
             self.tracker.complete_exercise()?;
         }
 
@@ -248,16 +259,30 @@ impl LessonManager {
         exercise_number: usize,
         exercise: &crate::ollama::formatter::Exercise,
         content: &crate::ollama::formatter::GeneratedContent,
+        clear_screen: bool,
     ) -> Result<()> {
-        // Clear screen before each exercise
-        Self::clear_screen();
-        
-        println!("\n{}", Colors::primary(&"=".repeat(60)));
+        // Clear screen before exercise if requested (not for first exercise)
+        if clear_screen {
+            Self::clear_screen();
+            println!("\n{}", Colors::primary(&"=".repeat(60)));
+        } else {
+            println!();
+            println!("{}", Colors::primary(&"=".repeat(60)));
+        }
         println!("{}", Colors::primary(&format!("Exercise {}: {}", exercise_number, exercise.title)).bold());
         println!("{}", Colors::primary(&"=".repeat(60)));
         
         // Display quick reference section with key concepts
         print_section_header("QUICK REFERENCE", |s| Colors::accent(s));
+        
+        // Show the concept first (especially important if user skipped previous exercises)
+        if !content.concept.trim().is_empty() {
+            println!("{}", Colors::success("Concept:").bold());
+            print_wrapped(&content.concept, TERMINAL_WIDTH - 4, 4);
+            println!();
+            println!("{}", Colors::primary(&Borders::separator(TERMINAL_WIDTH - 4)));
+            println!();
+        }
         
         // Show relevant code examples FIRST (if available) - they're more useful than syntax text
         if !content.code_examples.is_empty() {
@@ -623,9 +648,23 @@ impl LessonManager {
             retry_count += 1;
             
             println!("{}", Colors::info(&format!("Write your solution in: {}", file_path.display())));
-            println!("{}", Colors::muted("Press Enter when you're ready to test your solution (or Ctrl+C to exit)..."));
+            println!("{}", Colors::muted("Press Enter when you're ready to test your solution, or type 'skip' to skip this exercise (or Ctrl+C to exit)..."));
 
-            let _ = Text::new("").prompt();
+            let user_input = Text::new("").prompt();
+            
+            // Check if user wants to skip
+            if let Ok(input) = &user_input {
+                if input.trim().to_lowercase() == "skip" {
+                    println!("{}", Colors::warning("Exercise skipped. Moving to next..."));
+                    thread::sleep(Duration::from_millis(1000)); // Brief pause to show message
+                    break; // Exit retry loop and skip to next exercise
+                }
+            }
+            
+            // If user cancelled or wants to continue, proceed with testing
+            if user_input.is_err() {
+                return Ok(()); // User cancelled
+            }
 
             // Test the solution
             let mut all_passed = true;
