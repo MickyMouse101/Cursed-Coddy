@@ -55,9 +55,19 @@ impl JourneyManager {
             let (lesson, lesson_index) = match HumanLessons::get_next_lesson(last_index, language) {
                 Some((lesson, idx)) => (lesson, idx),
                 None => {
-                    println!();
-                    println!("{}", Colors::warning("No human-made lessons available for this language."));
-                    return Ok(());
+                    // Check if we completed all lessons or if there are no lessons
+                    let total_lessons = HumanLessons::get_total_lessons_for_language(language);
+                    if total_lessons > 0 && journey.completed_topics.len() >= total_lessons {
+                        println!();
+                        println!("{}", Colors::label_pass("SUCCESS").bold());
+                        println!("{}", Colors::success("Congratulations! You've completed all human-made lessons for this language!").bold());
+                        self.tracker.reset_journey()?;
+                        return Ok(());
+                    } else {
+                        println!();
+                        println!("{}", Colors::warning("No human-made lessons available for this language."));
+                        return Ok(());
+                    }
                 }
             };
 

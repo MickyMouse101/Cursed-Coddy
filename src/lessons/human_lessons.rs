@@ -68,8 +68,8 @@ impl HumanLessons {
                     if pos + 1 < language_lessons.len() {
                         language_lessons[pos + 1].0
                     } else {
-                        // Wrap around to first lesson of this language
-                        language_lessons[0].0
+                        // All lessons completed - return None to signal completion
+                        return None;
                     }
                 } else {
                     // Last index doesn't match, start from first of this language
@@ -80,6 +80,11 @@ impl HumanLessons {
         };
 
         Some((all_lessons[next_index].clone(), next_index))
+    }
+
+    pub fn get_total_lessons_for_language(language: Language) -> usize {
+        let all_lessons = Self::get_all_lessons();
+        all_lessons.iter().filter(|lesson| lesson.language == language).count()
     }
 
     fn rust_hello_world() -> GeneratedContent {
